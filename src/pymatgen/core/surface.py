@@ -918,7 +918,7 @@ class SlabGenerator:
         in_unit_planes: bool = False,
         primitive: bool = True,
         max_normal_search: int | None = None,
-        normal_search_tol: float | None = None,
+        max_normal_sin: float | None = None,
         reorient_lattice: bool = True,
     ) -> None:
         """Calculate the slab scale factor and uses it to generate an
@@ -963,18 +963,18 @@ class SlabGenerator:
                 cell for simulation. Normality is not guaranteed, but the oriented
                 cell will have the c vector as normal as possible to the surface.
                 The max absolute Miller index is usually sufficient.
-            normal_search_tol (float | None): If set, only candidates from the
+            max_normal_sin (float | None): If set, only candidates from the
                 max_normal_search iteration whose normalized cross product magnitude
                 with the surface normal is <= this value are accepted. Equivalently,
-                sin(angle between c and surface normal) must be <= normal_search_tol.
+                sin(angle between c and surface normal) must be <= max_normal_sin.
                 Among valid candidates the one yielding the fewest atoms (smallest
                 oriented unit cell volume) is chosen. Requires max_normal_search to
                 be set.
             reorient_lattice (bool): reorient the lattice such that
                 the c direction is parallel to the third lattice vector
         """
-        if normal_search_tol is not None and max_normal_search is None:
-            raise ValueError("normal_search_tol requires max_normal_search to be set.")
+        if max_normal_sin is not None and max_normal_search is None:
+            raise ValueError("max_normal_sin requires max_normal_search to be set.")
 
         def reduce_vector(vector: tuple[int, ...]) -> tuple[int, ...]:
             """Helper function to reduce vectors."""
@@ -1054,16 +1054,16 @@ class SlabGenerator:
                     osdm = np.linalg.norm(vec)
                     cosine = abs(np.dot(vec, normal) / osdm)
                     candidates.append((uvw, cosine, osdm))
-                    # Stop searching if cosine equals 1 or -1 (unless normal_search_tol is set, in
+                    # Stop searching if cosine equals 1 or -1 (unless max_normal_sin is set, in
                     # which case we want to search for the most orthogonal vector within the tolerance).
-                    if normal_search_tol is None and math.isclose(abs(cosine), 1, abs_tol=1e-8):
+                    if max_normal_sin is None and math.isclose(abs(cosine), 1, abs_tol=1e-8):
                         break
-                if normal_search_tol is not None:
-                    valid = [c for c in candidates if math.sqrt(max(0.0, 1.0 - c[1] ** 2)) <= normal_search_tol]
+                if max_normal_sin is not None:
+                    valid = [c for c in candidates if math.sqrt(max(0.0, 1.0 - c[1] ** 2)) <= max_normal_sin]
                     if not valid:
                         raise ValueError(
-                            f"No lattice vector found with cross-product magnitude <= {normal_search_tol}. "
-                            "Try increasing max_normal_search or relaxing normal_search_tol."
+                            f"No lattice vector found with cross-product magnitude <= {max_normal_sin}. "
+                            "Try increasing max_normal_search or relaxing max_normal_sin."
                         )
                     # Among candidates meeting the threshold, prefer fewest atoms (smallest cell volume).
                     uvw, _, _ = min(valid, key=lambda x: abs(np.linalg.det([*slab_scale_factor, x[0]])))
@@ -1103,7 +1103,7 @@ class SlabGenerator:
         self.oriented_unit_cell = Structure.from_sites(single, to_unit_cell=True)
 
         self.max_normal_search = max_normal_search
-        self.normal_search_tol = normal_search_tol
+        self.max_normal_sin = max_normal_sin
         self.parent = initial_structure
         self.lll_reduce = lll_reduce
         self.center_slab = center_slab
@@ -1629,7 +1629,7 @@ def generate_all_slabs(
     center_slab: bool = False,
     primitive: bool = True,
     max_normal_search: int | None = None,
-    normal_search_tol: float | None = None,
+    max_normal_sin: float | None = None,
     symmetrize: bool = False,
     repair: bool = False,
     include_reconstructions: bool = False,
@@ -1680,7 +1680,7 @@ def generate_all_slabs(
             cell for simulation. Normality is not guaranteed, but the oriented
             cell will have the c vector as normal as possible to the surface.
             The max absolute Miller index is usually sufficient.
-        normal_search_tol (float | None): Passed to SlabGenerator. If set,
+        max_normal_sin (float | None): Passed to SlabGenerator. If set,
             only c-vector candidates with sin(angle to surface normal) <=
             this value are accepted, and the one yielding fewest atoms is
             chosen. Requires max_normal_search to be set.
@@ -1711,7 +1711,7 @@ def generate_all_slabs(
             center_slab=center_slab,
             primitive=primitive,
             max_normal_search=max_normal_search,
-            normal_search_tol=normal_search_tol,
+            max_normal_sin=max_normal_sin,
             in_unit_planes=in_unit_planes,
         )
         slabs = gen.get_slabs(
