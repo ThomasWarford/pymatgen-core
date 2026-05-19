@@ -509,6 +509,98 @@ class TestSlabGenerator(MatSciTest):
         with pytest.raises(ValueError, match="No lattice vector found"):
             SlabGenerator(fcc, (2, 1, 1), 10, 10, max_normal_search=1, max_normal_sin=0.0)
 
+    def test_max_normal_sin_ba10re3o22(self):
+        # mp-1203847 Ba10Re3O22 (C2/m) — monoclinic structure where max_normal_search alone
+        # produces a large oriented unit cell for the (1,1,0) surface. max_normal_sin constrains
+        # the search to the smallest cell whose c vector is within the threshold.
+        struct = Structure(
+            Lattice([[2.922307, 10.166519, 0.0], [-2.922307, 10.166519, 0.0], [0.0, 0.594293, 10.220673]]),
+            [
+                "Ba",
+                "Ba",
+                "Ba",
+                "Ba",
+                "Ba",
+                "Ba",
+                "Ba",
+                "Ba",
+                "Ba",
+                "Ba",
+                "Re",
+                "Re",
+                "Re",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+            ],
+            [
+                [0.292247, 0.292247, 0.413900],
+                [0.707753, 0.707753, 0.586100],
+                [0.407057, 0.407057, 0.085344],
+                [0.592943, 0.592943, 0.914656],
+                [0.178587, 0.178587, 0.103919],
+                [0.821413, 0.821413, 0.896081],
+                [0.066630, 0.066630, 0.659768],
+                [0.933370, 0.933370, 0.340232],
+                [0.431293, 0.431293, 0.671716],
+                [0.568707, 0.568707, 0.328284],
+                [0.000000, 0.000000, 0.000000],
+                [0.256923, 0.256923, 0.761484],
+                [0.743077, 0.743077, 0.238516],
+                [0.083121, 0.533128, 0.659361],
+                [0.533128, 0.083121, 0.659361],
+                [0.916879, 0.466872, 0.340639],
+                [0.466872, 0.916879, 0.340639],
+                [0.325473, 0.325473, 0.881494],
+                [0.674527, 0.674527, 0.118506],
+                [0.196703, 0.196703, 0.623854],
+                [0.803297, 0.803297, 0.376146],
+                [0.973890, 0.448622, 0.848926],
+                [0.448622, 0.973890, 0.848926],
+                [0.026110, 0.551378, 0.151074],
+                [0.551378, 0.026110, 0.151074],
+                [0.086435, 0.086435, 0.918602],
+                [0.913565, 0.913565, 0.081398],
+                [0.793889, 0.258461, 0.118248],
+                [0.258461, 0.793889, 0.118248],
+                [0.206111, 0.741539, 0.881752],
+                [0.741539, 0.206111, 0.881752],
+                [0.426668, 0.426668, 0.357870],
+                [0.573332, 0.573332, 0.642130],
+                [0.950215, 0.950215, 0.587786],
+                [0.049785, 0.049785, 0.412214],
+            ],
+        )
+        # Without max_normal_sin, max_normal_search=6 picks a large oriented unit cell.
+        gen_large = SlabGenerator(struct, (1, 1, 0), 10, 10, max_normal_search=6)
+
+        # With max_normal_sin=0.1, the smallest cell satisfying sin(angle) <= 0.1 is chosen.
+        gen_constrained = SlabGenerator(struct, (1, 1, 0), 10, 10, max_normal_search=6, max_normal_sin=0.1)
+        c = gen_constrained.oriented_unit_cell.lattice.matrix[2]
+        sin_angle = np.linalg.norm(np.cross(gen_constrained._normal, c / np.linalg.norm(c)))
+
+        assert sin_angle <= 0.1
+        assert len(gen_constrained.oriented_unit_cell) < len(gen_large.oriented_unit_cell)
+
     def test_get_slabs(self):
         gen = SlabGenerator(self.get_structure("CsCl"), [0, 0, 1], 10, 10)
 
