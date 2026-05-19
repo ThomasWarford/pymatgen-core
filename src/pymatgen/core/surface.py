@@ -1046,28 +1046,46 @@ class SlabGenerator:
                     range(-max_normal_search, max_normal_search + 1),
                     key=lambda x: -abs(x),
                 )
-                candidates = []
-                for uvw in itertools.product(index_range, index_range, index_range):
-                    if (not any(uvw)) or abs(np.linalg.det([*slab_scale_factor, uvw])) < 1e-8:
-                        continue
-                    vec = lattice.get_cartesian_coords(uvw)
-                    osdm = np.linalg.norm(vec)
-                    cosine = abs(np.dot(vec, normal) / osdm)
-                    candidates.append((uvw, cosine, osdm))
-                    # Stop searching if cosine equals 1 or -1 (unless max_normal_sin is set, in
-                    # which case we want to search for the most orthogonal vector within the tolerance).
-                    if max_normal_sin is None and math.isclose(abs(cosine), 1, abs_tol=1e-8):
-                        break
                 if max_normal_sin is not None:
-                    valid = [c for c in candidates if math.sqrt(max(0.0, 1.0 - c[1] ** 2)) <= max_normal_sin]
-                    if not valid:
+                    # Vectorised path: build all candidate (u,v,w) triples at once and
+                    # evaluate det/cosine in bulk — avoids per-iteration Python overhead.
+                    coords = np.arange(-max_normal_search, max_normal_search + 1)
+                    all_uvw = np.array(np.meshgrid(coords, coords, coords, indexing="ij")).reshape(3, -1).T  # (N, 3)
+                    all_uvw = all_uvw[np.any(all_uvw != 0, axis=1)]  # drop zero vector
+
+                    # det([row0, row1, uvw]) = dot(uvw, cross(row0, row1))
+                    sf = np.array(slab_scale_factor, dtype=float)
+                    cofactors = np.cross(sf[0], sf[1])
+                    dets = all_uvw @ cofactors
+                    all_uvw = all_uvw[np.abs(dets) >= 1e-8]
+                    dets = dets[np.abs(dets) >= 1e-8]
+
+                    vecs = all_uvw @ lattice.matrix
+                    norms = np.linalg.norm(vecs, axis=1)
+                    cosines = np.abs(vecs @ normal / norms)
+                    sins = np.sqrt(np.maximum(0.0, 1.0 - cosines**2))
+
+                    mask = sins <= max_normal_sin
+                    if not mask.any():
                         raise ValueError(
                             f"No lattice vector found with cross-product magnitude <= {max_normal_sin}. "
                             "Try increasing max_normal_search or relaxing max_normal_sin."
                         )
-                    # Among candidates meeting the threshold, prefer fewest atoms (smallest cell volume).
-                    uvw, _, _ = min(valid, key=lambda x: abs(np.linalg.det([*slab_scale_factor, x[0]])))
+                    # Among valid candidates prefer fewest atoms (smallest cell volume).
+                    best = int(np.argmin(np.abs(dets[mask])))
+                    uvw = tuple(int(x) for x in all_uvw[mask][best])
                 else:
+                    candidates = []
+                    for uvw in itertools.product(index_range, index_range, index_range):
+                        if (not any(uvw)) or abs(np.linalg.det([*slab_scale_factor, uvw])) < 1e-8:
+                            continue
+                        vec = lattice.get_cartesian_coords(uvw)
+                        osdm = np.linalg.norm(vec)
+                        cosine = abs(np.dot(vec, normal) / osdm)
+                        candidates.append((uvw, cosine, osdm))
+                        # Stop once a perfectly perpendicular vector is found.
+                        if math.isclose(abs(cosine), 1, abs_tol=1e-8):
+                            break
                     # We want the indices with the maximum absolute cosine,
                     # but smallest possible length.
                     uvw, cosine, osdm = max(candidates, key=lambda x: (x[1], -x[2]))
