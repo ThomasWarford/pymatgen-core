@@ -1179,7 +1179,17 @@ class SlabGenerator:
 
         # Reduce to primitive cell
         if self.primitive:
-            prim_slab = struct.get_primitive_structure(tolerance=tol, reduce=False)
+            prim_slab = struct
+            constrain_latt = {"alpha": struct.lattice.alpha, "beta": struct.lattice.beta}
+            while True:
+                candidate = prim_slab.get_primitive_structure(
+                    tolerance=tol,
+                    reduce=False,
+                    constrain_latt=constrain_latt,
+                )
+                if len(candidate) == len(prim_slab):
+                    break
+                prim_slab = candidate
 
             if energy is not None:
                 energy *= prim_slab.volume / struct.volume
